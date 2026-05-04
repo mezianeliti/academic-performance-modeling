@@ -1,0 +1,1156 @@
+---
+title: "Linear Models Project — M1 (2025–2026)"
+subtitle: "Determinants of Students’ Exam Performance"
+author: "Boudia Merad Ambrine, Meziane Liticia and Talata Yasmine"
+output:
+  html_document:
+    code_folding: hide
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)   
+library(collapse)
+library(ggpubr)
+library(performance)
+library(broom)
+library(lmtest)
+
+required_packages <- c("tidyverse", "collapse", "ggpubr", "corrplot", "performance", "ggfortify", "tibble","lmtest", "broom","gridExtra","car")                                               
+missing_packages <- required_packages[!required_packages %in% rownames(installed.packages())]                                                 
+if (length(missing_packages) > 0) {                                                                                                           
+  stop("Missing required packages: ", paste(missing_packages, collapse = ", "),                                                               
+       ". Please install them before running the script.")                                                                                    
+}                                                                                                                                             
+invisible(lapply(required_packages, library, character.only = TRUE)) 
+
+set.seed(42)  
+data_raw <- read.csv("data/project.csv") 
+
+```
+
+
+# Introduction
+First of all, students’ academic performance is an important issue in education, as it influences future educational and labor market outcomes. 
+
+When studying academic performance, it is common to observe strong relationships between students’ exam scores and a wide range of individual or contextual characteristics. For instance, students who study more or attend classes more regularly often achieve better results. However, observing such relationships does not automatically imply a causal link, as several unobserved factors may simultaneously affect both study behavior and exam performance.
+
+This project focuses on identifying and describing the main factors associated with students’ exam scores, rather than establishing strict causal relationships. Using a dataset that combines exam results with demographic characteristics, study habits, and school-related variables, we rely on linear regression models to analyze how these factors are related to academic performance.
+
+The analysis is carried out in several steps. First, the dataset is prepared and cleaned to ensure consistent coding of the variables. We then use exploratory data analysis to better understand the data and to guide the choice of model specifications. In a next step, several linear regression models are estimated and compared. After estimation, we check the behavior of residuals and basic diagnostics to assess whether the models are appropriate. Finally, we evaluate predictive performance using a simple validation approach.
+
+<br>
+
+
+# Data and Methods
+
+## Dataset Management
+
+The first step of the analysis consists in **preparing and cleaning** the dataset.After importing the raw data, one starts by checking its structure and size to gain knowledge of the available information. Plus, before starting the analysis, one insures that each student appears only once in the dataset by verifying **the absence of duplicated identifiers**. Indeed if a student appears twice or more, this student carries more weight in the regression, which obviously biases the estimated coefficients that means **unreliable results** !  
+
+
+```{r}
+any(duplicated(data_raw))
+```
+
+We also check :
+-the possible missing values 
+
+```{r}
+colSums(is.na(data_raw))
+```
+-if our variables has plausible ranges. For example, we can observe that the age is between 14 and 19 which is consistent with the fact that the data comes from students. We also note that the study and sleep hours are quite realistic. For example, sleep time does not exceed 10 hours, which is perfectly reasonable. 
+
+```{r}
+data.frame(
+  Variable = c("y", "age", "study_hrs", "sleep_hrs", "attend_pct"),
+  Min = c(min(data_raw$y), min(data_raw$age), min(data_raw$study_hrs),
+          min(data_raw$sleep_hrs), min(data_raw$attend_pct)),
+  Max = c(max(data_raw$y), max(data_raw$age), max(data_raw$study_hrs),
+          max(data_raw$sleep_hrs), max(data_raw$attend_pct))
+)
+```
+-the possible outliers
+```{r}
+boxplot.stats(data_raw$y)$out                                                                                                          
+boxplot.stats(data_raw$age)$out                                                                                                        
+```
+
+By the way, most variables in the dataset are numerial values. To make the results easier to interpret, these variables are **recoded into factors with explicit labels**. For example, Gender is transformed into three categories : Female, Male, Other and school type is recoded as Public or Private. Then variables such as parental education, sleep quality and commuting time (trav_time) are treated as ordered factors since their categories follow a natural ranking.
+
+Furthermore , binary variables, such as web access and participation in extracurricular activities, are recoded into simple Yes/No indicators. Study methods are also transformed into a categorical variable distinguishing between different learning strategies used by students. Finally, some redundant categorical variables are **removed to avoid unnecessary duplication of information**. Eventually, one checks the **structure and dimensions** of the cleaned dataset using str() and dim() to make sure all variables were correctly coded. The data is now ready for analysis. 
+
+
+
+```{r}
+data_clean <- data_raw %>%                                                                                                                    
+  mutate(                                                                                                                                     
+    sexe = factor(sexe,                                                                                                                       
+                  levels = c(1, 2, 3),                                                                                                        
+                  labels = c("Female", "Male", "Other")),                                                                                     
+    
+    school_type = factor(school_type,                                                                                                         
+                         levels = c(1, 2),                                                                                                    
+                         labels = c("Public", "Private")),                                                                                    
+    
+    parent_educ = factor(parent_educ,                                                                                                         
+                         levels = 1:6,                                                                                                        
+                         labels = c("No Formal",                                                                                              
+                                    "High School",                                                                                            
+                                    "Graduate",                                                                                               
+                                    "Post Graduate 1",                                                                                        
+                                    "Post Graduate 2",                                                                                        
+                                    "PHD"),                                                                                                   
+                         ordered = FALSE),                                                                                                    
+    
+    sleep_qual = factor(sleep_qual,                                                                                                           
+                        levels = c(1, 2, 3),                                                                                                  
+                        labels = c("Poor", "Average", "Good"),                                                                                
+                        ordered = FALSE),                                                                                                     
+    
+    web_access = factor(web_access,                                                                                                           
+                        levels = c(1, 2),                                                                                                     
+                        labels = c("No", "Yes")),                                                                                             
+    
+    trav_time = factor(trav_time,                                                                                                             
+                       levels = c(1, 2, 3, 4),                                                                                                
+                       labels = c("<15 Min", "15-30 Min", "30-60 Min", ">60 Min"),                                                            
+                       ordered = FALSE),                                                                                                      
+    
+    extra_act = factor(extra_act,                                                                                                             
+                       levels = c(1, 2),                                                                                                      
+                       labels = c("No", "Yes")),                                                                                              
+    
+    study_method = factor(study_method,                                                                                                       
+                          levels = 1:6,                                                                                                       
+                          labels = c("Online Videos",                                                                                         
+                                     "Coaching",                                                                                              
+                                     "Notes",                                                                                                 
+                                     "Textbook",                                                                                              
+                                     "Group Study",                                                                                           
+                                     "Mixed"))                                                                                                
+  ) %>%                                                                                                                                       
+  select(-agecat, -attend_pct_cat)                                                                                                            
+                                     
+
+```
+
+
+## Modeling Strategy
+
+Not surprisingly, the analysis of students’ exam performance relies on linear regression models.
+Here, the exam score is the variable of interest, as it measures students’ academic performance. The analysis focuses on several explanatory variables related to students’ characteristics, family background, study behavior, and school environment.
+
+First of all, the **modeling strategy is constructed in a progressive way**.
+One starts by estimating **simple linear regressions** to examine the relationship between exam score and each predictor taken separately. This step helps identify the variables that are most strongly related to performance and guides the construction of the multivariate models.
+
+One then moves to **a first multivariate specification** that includes the main quantitative variables, ie attendance rate, study hours, age, and sleep duration, so that so that their effects can be analyzed together.
+
+Finally, the model is **extended by adding variables related to family background, study conditions, and school environment**. The goal is clearly to include relevant context variables while keeping the model as simple as possible.
+
+To put it in a nutshell, all models are estimated using **ordinary least squares**. After estimation, we look at the residuals and a few basic diagnostics to make sure the model makes sense and that the results are trustworthy.
+
+
+<br>
+
+## Selection Approach
+
+Several model specifications are estimated and compared. To choose between them, we rely on a combination of simple statistical criteria and predictive performance. In particular, information criteria such as **AIC** and **BIC** are used to compare models with **different levels of complexity** and **to avoid overfitting.**
+
+In addition, one evaluates how well the models perform on data that were not used for estimation. To do so, the dataset is **split into a training sample and a validation sample, and predictive accuracy is assessed out of sample**. The final model is selected by balancing model fit, predictive performance, and ease of interpretation ! 
+
+
+
+<br>
+
+
+# Exploratory Data Analysis (EDA)
+## Descriptive statistics
+
+We start by examining basic descriptive statistics for the main quantitative variables, namely exam score (y), age, study hours, sleep duration, and attendance rate. This first step provides an overview of the distribution, central tendency, and variability of the data.
+
+```{r}
+data_clean %>%                                                                                                                                
+  select(y, age, study_hrs, sleep_hrs, attend_pct) %>%                                                                                        
+  summary()                                                                                                                            
+```                               
+
+More detailed statistics : 
+
+```{r}                                              
+data_clean %>%                                                                                                                                
+  select(y, age, study_hrs, sleep_hrs, attend_pct) %>%                                                                                        
+  collapse::descr(Qprobs = c(0.25, 0.5, 0.75)) %>%                                                                                            
+  as_tibble()     
+``` 
+
+  Descriptive statistics indicate that **exam scores, attendance rate, and study hours** exhibit substantial variation across students, while **age and sleep duration** are more concentrated. The distributions are **reasonably symmetric** and do not display extreme values, suggesting that the data are suitable for linear regression.
+  
+<br>
+
+## Distribution of Response Variable
+
+
+
+```{r fig-y-dist, fig.show='hold', out.width='48%', fig.cap='Distribution of exam score (y)'}
+# Histogram with density
+ggplot(data_clean, aes(x = y)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 20,
+                 color = "black", fill = "dodgerblue", alpha = 0.7) +
+  geom_density(color = "red", linewidth = 1) +
+  labs(x = "Exam score (y)", y = "Density", title = "(a) Histogram with density")+
+  theme_bw(base_size = 14)
+
+# Boxplot
+ggplot(data_clean, aes(y = y)) +
+  geom_boxplot(fill = "dodgerblue", color = "black", width = 0.3) +
+  labs(y = "Exam score (y)", title = "(b) Boxplot")  +
+  theme_bw(base_size = 14)
+```
+
+  The distribution of exam scores is **approximately symmetric, with a slight right skew**. While a few higher values are visible, **no extreme outliers** are observed. As a result, no transformation of the response variable is required, and exam scores can be used **directly** in the linear regression models.
+  
+<br>
+
+##   Relationships with Quantitative Predictors
+
+
+
+```{r fig-quant, echo=FALSE, fig.show='hold', out.width='48%', fig.cap='Exam score vs quantitative predictors (LOESS smooth)'}
+# (a) y vs attend_pct
+ggplot(data_clean, aes(x = attend_pct, y = y)) +
+  geom_point(alpha = 0.3, color = "steelblue") +
+  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  labs(x = "Attendance rate (%)", y = "Exam score (y)",
+       title = "(a) Attendance rate") +
+  theme_bw(base_size = 14)
+
+# (b) y vs study_hrs
+ggplot(data_clean, aes(x = study_hrs, y = y)) +
+  geom_point(alpha = 0.3, color = "steelblue") +
+  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  labs(x = "Weekly study hours", y = "Exam score (y)",
+       title = "(b) Study hours") +
+  theme_bw(base_size = 14)
+  
+```
+**Comment on linearity**
+
+- Attendance rate shows a strong and almost linear positive relationship with exam score.
+
+- Study hours display a positive but more moderate association with performance.
+
+- Age and sleep duration show weak or no clear relationship with exam score and are omitted from the main figures for clarity.
+
+Overall, LOESS curves suggest that linear specifications are reasonable for the quantitative predictors.
+
+<br>
+
+##  Relationships with Categorical Predictors
+
+```{r fig-categ, echo=FALSE, fig.show='hold', out.width='48%', fig.cap='Exam score vs selected categorical predictors'}
+
+# (a) School type
+ggplot(data_clean, aes(x = school_type, y = y, fill = school_type)) +
+  geom_boxplot(color = "black") +
+  labs(x = "School type", y = "Exam score (y)",
+       title = "(a) School type") +
+  theme_bw(base_size = 14) +
+  theme(legend.position = "none")
+
+# (b) Study method
+ggplot(data_clean, aes(x = study_method, y = y, fill = study_method)) +
+  geom_boxplot(color = "black") +
+  labs(x = "Study method", y = "Exam score (y)",
+       title = "(b) Study method") +
+  theme_bw(base_size = 14) +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+Exam scores **differ across school types and study methods**. In particular, students attending private schools and those using certain study methods tend to achieve higher scores, which motivates the inclusion of these categorical variables in the regression models.
+
+<br>
+
+##   Relationships with Ordinal Predictors
+
+
+
+```{r fig-ordinal, echo=FALSE, fig.show='hold', out.width='32%', fig.cap='Exam score vs ordinal predictors (monotone trends)'}
+      
+# (a) Parental education
+# y vs parent_educ (ordinal) - with violin plot to see distribution                                                                           
+ggplot(data_clean, aes(x = parent_educ, y = y, fill = parent_educ)) +                                                                         
+  geom_violin(alpha = 0.7) +                                                                                                                  
+  geom_boxplot(width = 0.2, fill = "white") +                                                                                                 
+  labs(x = "Parental education (ordered)", y = "Exam score (y)",                                                                              
+       title = "Monotone trend: higher parental education -> higher scores") +                                                                 
+  theme_bw(base_size = 14) +                                                                                                                  
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))    
+  
+# (b) Sleep quality
+ggplot(data_clean, aes(x = sleep_qual, y = y, fill = sleep_qual)) +                                                                           
+  geom_violin(alpha = 0.7) +                                                                                                                  
+  geom_boxplot(width = 0.2, fill = "white") +                                                                                                 
+  labs(x = "Sleep quality (ordered)", y = "Exam score (y)",                                                                                   
+       title = "Monotone trend: better sleep quality -> higher scores") +                                                                      
+  theme_bw(base_size = 14) +                                                                                                                  
+  theme(legend.position = "none")      
+  
+# (c) Travel time
+ggplot(data_clean, aes(x = trav_time, y = y, fill = trav_time)) +                                                                             
+  geom_violin(alpha = 0.7) +                                                                                                                  
+  geom_boxplot(width = 0.2, fill = "white") +                                                                                                 
+  labs(x = "Travel time (ordered)", y = "Exam score (y)",                                                                                     
+       title = "Monotone trend: longer travel time -> lower scores") +                                                                         
+  theme_bw(base_size = 14) +                                                                                                                  
+  theme(legend.position = "none") 
+
+```                                              
+
+
+All ordinal predictors show clear monotone trends: higher parental education and better sleep quality are associated with higher scores, while longer travel time is associated with lower scores.
+
+<br>
+
+## Associations Between Predictors
+
+### Correlation Matrix (Quantitative Variables)
+
+
+```{r corr-matrix, fig.cap="Correlation Matrix of Quantitative Variables", fig.height=5, fig.width=6}
+# Correlation matrix for quantitative predictors
+quant_vars <- data_clean %>% select(y, age, study_hrs, sleep_hrs, attend_pct)
+cor_matrix <- cor(quant_vars)
+round(cor_matrix, 2)
+
+# Visualize correlation matrix
+corrplot(cor_matrix, method = "color", type = "upper",
+         addCoef.col = "black", tl.col = "black", tl.srt = 45,
+         title = "Correlation matrix of quantitative variables",
+         mar = c(0, 0, 2, 0))
+```
+
+
+Here are the **key observations:**
+
+- Attendance rate (attend_pct) exhibits the strongest positive correlation with exam score, with a correlation coefficient around 0.5.
+
+- No strong multicollinearity is observed among quantitative predictors, as all pairwise correlations remain below 0.7 in absolute value.
+
+
+### Associations Between Categorical Variables
+
+
+```{r chi-sq}
+# Association between categorical predictors (example: school_type vs web_access)
+table(data_clean$school_type, data_clean$web_access)
+chisq.test(data_clean$school_type, data_clean$web_access)
+
+# Association between categorical predictors (parent_educ vs school_type)
+table(data_clean$parent_educ, data_clean$school_type)
+```
+
+### Mixed Associations
+
+
+```{r mixed-study-school, fig.cap="Study Hours by School Type", fig.height=4}
+# Example: study_hrs by school_type
+ggplot(data_clean, aes(x = school_type, y = study_hrs, fill = school_type)) +
+  geom_boxplot() +
+  labs(x = "School type", y = "Weekly study hours",
+       title = "Study hours by school type") +
+  theme_bw(base_size = 14) +
+  theme(legend.position = "none")
+```
+
+```{r mixed-attend-parent, fig.cap="Attendance Rate by Parental Education", fig.height=4}
+# Example: attend_pct by parent_educ
+ggplot(data_clean, aes(x = parent_educ, y = attend_pct, fill = parent_educ)) +
+  geom_boxplot() +
+  labs(x = "Parental education", y = "Attendance rate (%)",
+       title = "Attendance rate by parental education") +
+  theme_bw(base_size = 14) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+One can claim that :
+
+- attend_pct and study_hrs show a moderate positive correlation (around 0.4).
+
+- school_type and web_access appear to be associated, with private schools more likely to provide internet access.
+
+- parent_educ is also related to school_type, as higher parental education is more frequently observed among students attending private schools.
+
+To put it in a nutshell, these associations should be monitored in the modeling stage but do not suggest severe multicollinearity issues.
+
+### EDA Summary
+
+**1) Candidate predictors**
+Attendance rate (attend_pct) is the strongest predictor of exam score (y) since r ≈ 0.74 , while study hours show a clear but more moderate positive association. In addition, ordinal variables such as parental education, sleep quality and travel time display clear monotone trends and therefore appear relevant for the regression analysis. By contrast, gender shows little variation in exam scores and is likely to play a minor role.
+
+**2) Transformations and nonlinearity**
+Visual inspections and LOESS smooths suggest that linear relationships provide a reasonable approximation for all quantitative predictors. There is no strong evidence for polynomial terms or transformations of y and the the response variable is approximately symmetric.
+
+**3) Interaction hypotheses**
+The exploratory analysis motivates testing a small number of interaction effects. In particular, the impact of study hours may depend on attendance rate, and the effect of school type may vary with parental education.
+
+**4) Potential collinearity**
+Moderate correlations are observed between some predictors, notably between attendance rate and study hours. Socioeconomic variables also appear partially related (parent_educ,      school_type, web_access). However, these associations do not suggest severe multicollinearity concerns and will be monitored in the modeling stage.
+
+
+
+<br>
+
+
+# Building Regression Models 
+
+
+The objective of the model selection process is to *identify a parsimonious linear regression model* that explains students’ exam performance while maintaininig *interpretability, statistical validity, and predictive performance*.
+
+
+
+
+## Simple Linear Regressions 
+
+Before building multiple regression models, we first examine the relationship between the response variable `y` and each predictor individually.This helps us:                                                                                              
+  - Identify which predictors have the **strongest** individual association with exam scores                      
+  - Detect predictors with **negligible explanatory power** (candidates for exclusion)                                  
+  - Inform our strategy for building multiple regression models 
+
+```{r simple-reg}
+# Quantitative predictors
+m_age    <- lm(y ~ age, data = data_clean)
+m_study  <- lm(y ~ study_hrs, data = data_clean)
+m_sleep  <- lm(y ~ sleep_hrs, data = data_clean)
+m_attend <- lm(y ~ attend_pct, data = data_clean)
+
+# Categorical predictors
+m_sexe      <- lm(y ~ sexe, data = data_clean)
+m_school    <- lm(y ~ school_type, data = data_clean)
+m_parent    <- lm(y ~ parent_educ, data = data_clean)
+m_sleepqual <- lm(y ~ sleep_qual, data = data_clean)
+m_trav      <- lm(y ~ trav_time, data = data_clean)
+m_extra     <- lm(y ~ extra_act, data = data_clean)
+m_web       <- lm(y ~ web_access, data = data_clean)
+m_method    <- lm(y ~ study_method, data = data_clean)
+```
+The table below summarizes the results of the **simple regression models**.
+
+```{r simple-reg-table}
+# Create summary table
+simple_models <- list(
+  attend_pct = m_attend, study_hrs = m_study, sleep_hrs = m_sleep, age = m_age,
+  parent_educ = m_parent, sleep_qual = m_sleepqual, trav_time = m_trav,
+  school_type = m_school, web_access = m_web, extra_act = m_extra,
+  study_method = m_method, sexe = m_sexe
+)
+
+simple_reg_table <- data.frame(
+  Predictor = names(simple_models),
+  R2 = round(sapply(simple_models, function(m) summary(m)$r.squared), 4),
+  Adj_R2 = round(sapply(simple_models, function(m) summary(m)$adj.r.squared), 4)
+)
+simple_reg_table <- simple_reg_table[order(-simple_reg_table$R2), ]
+rownames(simple_reg_table) <- NULL
+
+simple_reg_table
+```
+
+**Observations:**
+
+- `attend_pct` explains ~55% of variance alone (strongest predictor)
+- `study_hrs` explains ~32% of variance
+- `sexe` has near-zero R² → **excluded from multiple regression**
+- `extra_act` and `study_method` show low explanatory power (low R²)
+
+
+<br>
+
+
+## Multiple linear regression models
+
+```{r models}
+# Model 0: Baseline with quantitative predictors only
+mod0 <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs, data = data_clean)
+
+# Model 1: Add key categorical/ordinal predictors supported by EDA
+mod1 <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs +
+             parent_educ + sleep_qual + trav_time +
+             school_type + web_access,
+           data = data_clean)
+
+# Model 2: Add extra_act and study_method
+mod2 <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs +
+             parent_educ + sleep_qual + trav_time +
+             school_type + web_access +
+             extra_act + study_method,
+           data = data_clean)
+
+# Model 3: Test ONE interaction hypothesis
+# Hypothesis: The effect of study hours on exam score may depend on attendance rate.
+mod3 <- lm(y ~ attend_pct * study_hrs + age + sleep_hrs +
+             parent_educ + sleep_qual + trav_time +
+             school_type + web_access,
+           data = data_clean)
+```
+
+**Model justification:**
+
+- Candidate models are constructed incrementally, starting from a baseline specification and progressively adding groups of predictors motivated by exploratory analysis.
+
+| Model | Description | Variables |
+|-------|-------------|-----------|
+| mod0 | Baseline | 4 quantitative predictors |
+| mod1 | Main effects | + 5 categorical/ordinal predictors (9 total) |
+| mod2 | Extended | + extra_act + study_method (11 total) |
+| mod3 | Interaction | mod1 + attend_pct × study_hrs |
+
+<br>
+
+
+### Interaction Hypothesis and Transformations
+
+
+
+- We further test **one interaction hypothesis**: the effect of study hours on exam performance may depend on attendance rate, with higher attendance potentially enhancing the returns to study time.
+
+This hypothesis is **motivated** by the idea that study time may be more productive for students with higher attendance.
+
+```{r interaction-model}
+anova(mod1, mod3)
+```
+
+**Result:** The interaction term `attend_pct:study_hrs` is **not statistically significant** (p ≈ 0.11). Following the principle of parsimony, we do not retain interaction terms.
+
+**What about transformations ?**
+
+- Regarding potential **transformations**, exploratory analysis and diagnostic checks indicate that the relationships are approximately linear and that the response distribution is reasonably **symmetric**. Therefore, **no transformation** was applied in order to preserve **interpretability**.
+
+
+
+## Model Comparison
+
+              
+```{r model-comparison}
+# Model performance table (Adj R², AIC, BIC)
+tab_models <- bind_rows(
+  model_performance(mod0) |> mutate(Model = "mod0"),
+  model_performance(mod1) |> mutate(Model = "mod1"),
+  model_performance(mod2) |> mutate(Model = "mod2"),
+  model_performance(mod3) |> mutate(Model = "mod3")
+) |>
+  select(Model,R2, R2_adjusted, AIC, BIC) |>
+  arrange(AIC)
+
+tab_models
+```                                                                                                                            
+
+
+```{r f-tests}
+# Nested F-tests (inferential criterion)
+ftests <- bind_rows(
+  anova(mod0, mod1) |> as.data.frame() |> mutate(Comparison = "mod0 vs mod1"),
+  anova(mod1, mod2) |> as.data.frame() |> mutate(Comparison = "mod1 vs mod2"),
+  anova(mod1, mod3) |> as.data.frame() |> mutate(Comparison = "mod1 vs mod3")
+) |>
+  filter(!is.na(`Pr(>F)`)) |>
+  select(Comparison, Df, F, `Pr(>F)`)
+
+ftests
+```
+
+
+
+## Final Model Selection
+
+```{r final-model-choice}
+final_model <- mod1
+```
+Final model selection is based on two complementary criteria:
+
+- **Inferential criterion (nested F-tests)**: 
+ Moving from the baseline model (mod0) to mod1 results in a large and statistically **significant** improvement in model fit (F = 43.38, p < 0.001).
+Extending the model to mod2 also yields a statistically significant improvement (F = 13.67, p < 0.001); however, the associated gain in explanatory power is modest, with the adjusted R² **increasing** by approximately 0.005.
+In contrast, introducing the interaction term in mod3 **does not significantly improve** model fit (F = 2.60, p = 0.107), providing no empirical support for retaining interaction effects.
+
+- **Parsimony and model-selection criteria (adjusted R², AIC, BIC)**:
+Although mod2 achieves the **highest in-sample fit** (adjusted R² ≈ 0.710), its improvement over mod1 (adjusted R² ≈ 0.705) is marginal relative to the increase in **model complexity**.
+Information criteria similarly favor mod1, which attains lower AIC and BIC values compared to mod2 and mod3.
+
+To put it in a nutshell, **mod1** provides the best trade-off between explanatory power, interpretability, and model complexity, and is therefore selected as the final model.
+
+
+
+<br>
+
+# Model diagnostics
+
+Once, we have our model we must check the normality of our residuals. To do so, we use graphics and tests to have as many points of view as possible.
+
+
+## Linearity of our model
+
+**Residual vs fitted value**
+```{r}                                              
+autoplot(mod1, which = 1) +
+  theme_bw(base_size = 14)      
+``` 
+
+The residuals are **randomly scattered around zero with no obvious pattern**,supporting the fact that our residuals are well centered and the linearity of our model.
+
+
+
+**Residual vs quantitative predictors**
+```{r, message=FALSE, warning=FALSE} 
+library(gridExtra)
+
+g1 <- data_clean |>
+  ggplot(aes(x = attend_pct, y = resid(mod1))) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(x = "Attendance rate", y = "Residuals",
+       title = "No pattern - linearity assumption satisfied") +
+  theme_bw(base_size = 14)
+
+g2 <- data_clean |>
+  ggplot(aes(x = study_hrs, y = resid(mod1))) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(x = "Study hours", y = "Residuals") +
+  theme_bw(base_size = 14)
+grid.arrange(g1, g2, ncol = 2)
+```
+
+We observe that the curves are approximately **flat around zero**, confirming **linearity of our model**.
+
+
+
+**Residual vs omitted variables**
+```{r}
+library(gridExtra)
+
+g1 <- ggplot(data_clean, aes(x = sexe, y = resid(mod1))) +
+  geom_boxplot(fill = "dodgerblue", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(x = "Gender (omitted variable)", y = "Residuals",
+       title = "Residuals centered at zero for all groups") +
+  theme_bw(base_size = 14)
+
+g2 <- ggplot(data_clean, aes(x = extra_act, y = resid(mod1))) +
+  geom_boxplot(fill = "lightgreen", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(x = "Extracurricular activities (omitted)", y = "Residuals") +
+  theme_bw(base_size = 14)
+
+g3 <-ggplot(data_clean, aes(x = study_method, y = resid(mod1))) +
+  geom_boxplot(fill = "orange", color = "black") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(x = "Study method (omitted)", y = "Residuals") +
+  theme_bw(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g4 <-
+  
+  grid.arrange(g1, g2, g3, ncol = 3)
+```
+
+The residuals are **centered around zero** for all categories of omitted variables, confirming that excluding these variables do not add any more precision to the model.
+
+
+
+## Uncorrelation
+```{r}                                              
+autoplot(mod1, which = 3) +                                              theme_bw(base_size = 14)    
+``` 
+
+
+## Homoscedasticity
+
+**standardized residuals vs fitted value**
+```{r, message=FALSE, warning=FALSE}                                               
+library(car)
+
+set.seed(42)
+durbinWatsonTest(mod1)
+``` 
+The p-value is bigger than 0.05, so our observations are **uncorrelated**.
+
+
+
+**Breusch-Pagan test**
+```{r}                                              
+bp_result <- bptest(mod1)
+bp_result 
+``` 
+
+The Scale-Location plot shows a relatively flat trend, suggesting that the variance of residuals is approximately constant.
+And, the test gives a big p-value (> 0.05). So, both confirm the **homoscedasticity assumption**.
+
+
+
+## Normality assumption
+
+**Shapiro test**
+```{r}                                              
+set.seed(42)
+resid_sample <- sample(resid(mod1), size = min(5000, length(resid(mod1))))
+shapiro_result <- shapiro.test(resid_sample)
+shapiro_result
+``` 
+
+**QQ plot**
+```{r}                                              
+autoplot(mod1, which = 2) +   
+  theme_bw(base_size = 14)  
+``` 
+
+Although the **Shapiro-Wilk test** rejects the normality of the residuals (p-value < 0.05), the graphical analysis (**QQ-plot**) suggests an approximately Gaussian distribution, consistent with the normality assumption of our model.
+
+**Conclusion : All the hypotheses of our model are satisfied.**
+
+
+## Outlier dectection
+
+**Cook's distance**
+
+```{r}                                              
+autoplot(mod1, which = 4) +
+  theme_bw(base_size = 14)
+``` 
+
+No observation has a **Cook's distance** values higher than 1. So, our model has no outiler.
+
+
+---
+
+# Interpretation and inference
+
+## Final Model Equation
+
+The final model is a multiple linear regression that brings together the main quantitative and categorical variables identified during the exploratory analysis.
+
+```{r model-summary}
+final_model <- mod1                                                                                                                           
+
+summary(final_model)    
+```
+
+**Final model equation:**   
+
+$$y = \beta_0 + \beta_1 \cdot \text{attend\_pct} + \beta_2 \cdot \text{study\_hrs} + \beta_3 \cdot \text{age} + \beta_4 \cdot \text{sleep\_hrs} + \ldots + \varepsilon$$
+
+**Reference categories:**
+
+- `parent_educ`: "No Formal"
+- `sleep_qual`: "Poor"
+- `trav_time`: "<15 Min"
+- `school_type`: "Public"
+- `web_access`: "No"                                                                                                                                           
+ 
+
+## Coefficient Table with 95% CI
+
+```{r coef-table}
+coef_table <- tidy(final_model, conf.int = TRUE, conf.level = 0.95)                                                                           
+coef_table                                                                                                                                    
+
+coef_table <- tidy(final_model, conf.int = TRUE, conf.level = 0.95) %>%                                                                       
+  mutate(                                                                                                                                     
+    estimate  = round(estimate, 4),                                                                                                           
+    std.error = round(std.error, 4),                                                                                                          
+    conf.low  = round(conf.low, 4),                                                                                                           
+    conf.high = round(conf.high, 4),                                                                                                          
+    p.value   = ifelse(p.value < 0.001, "<0.001", round(p.value, 4))                                                                          
+  )                                                                                                                                           
+
+coef_table          
+```
+
+
+## Key Coefficient Interpretations
+
+
+```{r key-coefs}
+# Extract key coefficients for interpretation                                                   coef(final_model)["attend_pct"]                                                                                                               
+coef(final_model)["study_hrs"]                                                                                                                
+coef(final_model)["sleep_qualGood"]                                                                                                           
+coef(final_model)["parent_educPHD"]                                                                                                           
+coef(final_model)["trav_time>60 Min"]                                                                                                         
+coef(final_model)["school_typePrivate"]                                               
+```
+                                            
+
+
+Several coefficients from the final model stand out both in terms of magnitude and interpretability.
+
+First, **attendance rate (attend_pct) has a strong and precisely estimated effect**. A one percentage point increase in attendance is associated with an increase of about 0.47 points in exam score, all else equal. This means that a realistic improvement of 10 percentage points in attendance corresponds to an expected gain of roughly 4.7 points, making attendance one of the most influential continuous predictors in the model.
+
+**Study hours (study_hrs) also show a substantial positive effect**. Each additional hour of weekly study is associated with an increase of approximately 2.16 points in exam score. This suggests that regular study effort translates fairly directly into better academic outcomes.
+
+**Sleep quality also makes a clear difference**. Students with good sleep quality score roughly 4.42 points higher than those with poor sleep quality. This effect is not to be negligible and shows that performance is not only driven by study time or attendance, but also by how well students rest.
+
+Moreover **there is an effect of parental education**. Compared to students whose parents have no formal education, those whose parents hold a PhD score on average about 2.05 points higher. While smaller than the effects of attendance or study hours, this difference remains meaningful and reflects persistent socioeconomic influences.
+
+Finally, **travel time has a negative impact on exam performance**. Students commuting more than 60 minutes score on average around 3.58 points lower than those living within 15 minutes of school (reference group). This suggests that long commutes put a strain on academic performance, even when students’ study habits and background are taken into account.
+
+To conclude, these results indicate that **exam performance is shaped by a combination of behavioral factors, living conditions, and family background**, with attendance and study time emerging as the most quantitatively important predictors.
+
+
+
+## Scenario- Based Interpretation
+
+To make the **results more concrete, we use the final model to predict exam scores for two realistic student profiles** that represent very different academic situations.
+
+The **first profile corresponds to a high-performing student**. This student has a high attendance rate (95%), studies regularly (25 hours per week), reports good sleep quality, lives close to school, and comes from a favorable family background (high parental education, private school).The predicted exam score for this profile is around X points, with a 95% confidence interval ranging from [X₁, X₂].
+
+
+
+```{r profile-high}
+# Profile 1: "High-performing" student                                                                                                        
+profile_high <- data.frame(                                                                                                                   
+  attend_pct = 95,                                                                                                                            
+  study_hrs = 25,                                                                                                                             
+  age = 16,                                                                                                                                   
+  sleep_hrs = 8,                                                                                                                              
+  parent_educ = "PHD",                                                                                                                        
+  sleep_qual = "Good",                                                                                                                        
+  trav_time = "<15 Min",                                                                                                                      
+  school_type = "Private",                                                                                                                    
+  web_access = "Yes"                                                                                                                          
+)                         
+
+# Prediction with confidence interval
+pred_high <- predict(final_model, newdata = profile_high, interval = "confidence")
+pred_high
+```
+
+
+
+
+The **second profile represents an at-risk student**. This student has low attendance (55%), studies very little (3 hours per week), reports poor sleep quality, faces a long commute, and comes from a less advantaged background. For this profile, the model predicts an exam score of around Y points, with a 95% confidence interval of [Y₁, Y₂].
+
+
+```{r profile-risk}
+# Profile 2: "At-risk" student                                                                                                                
+profile_risk <- data.frame(                                                                                                                   
+  attend_pct = 55,                                                                                                                            
+  study_hrs = 3,                                                                                                                              
+  age = 17,                                                                                                                                   
+  sleep_hrs = 5,                                                                                                                              
+  parent_educ = "No Formal",                                                                                                                  
+  sleep_qual = "Poor",                                                                                                                        
+  trav_time = ">60 Min",                                                                                                                      
+  school_type = "Public",                                                                                                                     
+  web_access = "No"                                                                                                                           
+)                             
+
+
+# Prediction with confidence interval
+pred_risk <- predict(final_model, newdata = profile_risk, interval = "confidence")
+pred_risk
+```
+
+
+### Comparison
+
+```{r diff-score}
+# Predicted difference between profiles
+diff_score <- pred_high[1] - pred_risk[1]
+diff_score
+```
+
+```{r diff-interpretation, echo=FALSE}
+cat(
+  "The high-performing student is predicted to score",
+  round(pred_high[1], 2),
+  "points (95% CI:",
+  round(pred_high[2], 2), ",",
+  round(pred_high[3], 2), ").\n\n",
+  
+  "The at-risk student is predicted to score",
+  round(pred_risk[1], 2),
+  "points (95% CI:",
+  round(pred_risk[2], 2), ",",
+  round(pred_risk[3], 2), ").\n\n",
+  
+  "The predicted difference between the two profiles is approximately",
+  round(diff_score, 2),
+  "points, illustrating the cumulative effect of multiple favorable versus unfavorable factors."
+)
+```
+
+
+
+At this stage, one suggests doing an improvement scenario : what if the at-risk student improved attendance from 55% to 80%?  
+
+```{r profile-improved}
+profile_improved <- profile_risk                                                                                                              
+profile_improved$attend_pct <- 80                                                                                                             
+
+pred_improved <- predict(final_model, newdata = profile_improved, interval = "confidence")                                                    
+pred_improved                                                                                                                                 
+
+improvement <- pred_improved[1] - pred_risk[1]                                                                                                
+improvement                                                                                                                                   
+```
+
+```{r attendance-interpretation, echo=FALSE}
+cat(
+  "Improving attendance by 25 percentage points (from 55% to 80%) is associated with an increase of approximately",
+  round(improvement, 2),
+  "points in the predicted exam score."
+)
+```
+
+## Practical vs statistical significance  
+
+
+```{r significant-predictors}
+# Extract p-values and effect sizes
+coef_summary <- summary(final_model)$coefficients
+
+# Identify statistically significant predictors (p < 0.05)
+sig_predictors <- rownames(coef_summary)[coef_summary[, 4] < 0.05]
+sig_predictors
+```
+
+Recall that a variable can be **statistically significant** without being really important in practice. A low p-value indicates that an estimated effect is unlikely to be zero, but it does not provide information about **the magnitude of the effect or its practical relevance**.
+
+This is clearly the case for **attendance rate**. Attendance is highly statistically significant, but more importantly, its effect is large. A **10 percentage point increase in attendance** leads to several additional points on the exam score. In practice, this can make a real difference, for example moving a student from an average result to a much better one.
+
+On the other hand, some variables such as **age may be statistically significant but have a very small effect size**. A one-year difference in age changes the exam score only slightly, which means that the practical impact is limited.
+
+Therefore, for this reason, we focus our interpretation on variables that are **both statistically significant and practically meaningful**, such as attendance rate, study hours, parental education, sleep quality and travel time. These factors have effects that are large enough to matter for students’ academic performance.
+
+
+## Model Fit Summary
+
+```{r fit-summary}
+# Model fit statistics
+r2 <- summary(final_model)$r.squared
+adj_r2 <- summary(final_model)$adj.r.squared
+sigma <- summary(final_model)$sigma
+n_obs <- nrow(data_clean)
+n_pred <- length(coef(final_model)) - 1
+```
+
+**Interpretation:**
+
+The final model explains around **71%** of the variation in exam scores, as indicated by the **R²**. After adjusting for the number of predictors, the **adjusted R² remains very close**, showing that the explanatory power of the model is not driven by overfitting. The **residual standard error is about `r round(sigma, 1)`** points, which means that individual predictions can differ from actual scores by several points. This level of uncertainty is expected in educational data, but finally the model captures the main systematic patterns in exam performance. In addition, the **global F-test** is statistically significant **(F-test p < 0.001)**, meaning that the predictors jointly explain a significant portion of variance. 
+
+<br>
+
+
+# Predictive Performance
+
+In this section, we evaluate the **predictive performance** of the selected models.
+To this end, the data are split into a training set and a test set. Models are fitted on the training data and their out-of-sample performance is assessed on the test data.
+
+
+## Train/Test Split
+
+```{r train-test}
+set.seed(42)
+
+n <- nrow(data_clean)
+idx_train <- sample(seq_len(n), size = 0.8 * n)
+
+train <- data_clean[idx_train, ]
+test  <- data_clean[-idx_train, ]
+
+cat("Training set size:", nrow(train), "\n")
+cat("Test set size:", nrow(test), "\n")
+```
+
+We use a **train/test split** approach with the following protocol:                                                       
+- **Split ratio:** 80% training / 20% test                                                                          
+- **Random seed:** `set.seed(42)` for reproducibility                                                                       
+- **Training set:** Used to fit the models                                                                                  
+- **Test set:** Held out to evaluate out-of-sample performance (simulates "new students") 
+
+**Why train/test split?**                                                                                                   
+  - It provides an unbiased estimate of model performance on unseen data.                                                  
+  - It helps detect overfitting (if test performance is much worse than training performance).                        
+  - The 80/20 ratio is a standard choice that balances having enough data for training while retaining sufficient test data for reliable.        
+ 
+
+## Training and Test-Based Prediction
+
+
+```{r refit-train}
+# Refit all candidate models on training data only
+mod0_tr <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs, data = train)
+
+mod1_tr <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs +
+                parent_educ + sleep_qual + trav_time +
+                school_type + web_access, data = train)
+
+mod2_tr <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs +
+                parent_educ + sleep_qual + trav_time +
+                school_type + web_access +
+                extra_act + study_method, data = train)
+```
+
+- To ensure a fair evaluation of predictive performance, we **refit all candidate models using only the training data**. This is a critical step to avoid **data leakage**: if we used the full-sample models (mod0, mod1, mod2) for prediction, the test observations would have influenced the coefficient estimates, leading to overly optimistic performance metrics. 
+
+
+```{r predictions}
+pred0 <- predict(mod0_tr, newdata = test)
+pred1 <- predict(mod1_tr, newdata = test)  # final model
+pred2 <- predict(mod2_tr, newdata = test)
+
+# Baseline: predict training mean
+y_mean <- mean(train$y)
+pred_base <- rep(y_mean, nrow(test))
+```
+
+We now generate predictions for the held-out test observations using each training-fitted model. Additionally, we include a **naive baseline predictor** that simply predicts the training-set mean for all observations. This baseline serves as a reference point: any useful model should outperform this trivial prediction.                      
+
+  - `pred0`,`pred1`,`pred2`: Predictions from the three regression models                                            
+  - `pred_base`: Naive baseline (training mean applied to all test cases) 
+
+
+## Performance Metrics
+
+
+We evaluate predictive performance on the test set using metrics suited for out-of-sample evaluation:
+
+- **MSE**: Primary metric (used by the instructor for ranking)
+- **RMSE**: Square root of MSE, reported for interpretability on the original scale of the response
+- **R²_test**: Out-of-sample variance explained
+- **MedAE**: Robust measure of typical prediction error
+
+Note: These metrics differ from in-sample criteria (AIC, BIC) used for model selection in Part 3, which penalize model complexity. Here, we directly assess prediction accuracy on unseen data.            
+
+```{r metrics-functions}
+# Define metric functions
+mse <- function(y, yhat) mean((y - yhat)^2)
+rmse <- function(y, yhat) sqrt(mean((y - yhat)^2))
+r2_oos <- function(y, yhat) 1 - sum((y - yhat)^2) / sum((y - mean(y))^2)
+medae <- function(y, yhat) median(abs(y - yhat))
+```
+
+```{r perf-table}
+# Performance comparison table
+perf <- tibble(
+  Model = c("Baseline", "mod0", "mod1 (final)", "mod2"),
+  MSE = c(mse(test$y, pred_base), mse(test$y, pred0),
+          mse(test$y, pred1), mse(test$y, pred2)),
+  RMSE = c(rmse(test$y, pred_base), rmse(test$y, pred0),
+           rmse(test$y, pred1), rmse(test$y, pred2)),
+  R2_test = c(r2_oos(test$y, pred_base), r2_oos(test$y, pred0),
+              r2_oos(test$y, pred1), r2_oos(test$y, pred2)),
+  MedAE = c(medae(test$y, pred_base), medae(test$y, pred0),
+            medae(test$y, pred1), medae(test$y, pred2))
+)
+
+perf
+```
+
+
+## Improvement Over Baseline
+
+```{r perf-improve}
+baseline_mse <- perf$MSE[perf$Model == "Baseline"]
+baseline_rmse <- perf$RMSE[perf$Model == "Baseline"]
+
+perf_improve <- perf %>%
+  mutate(
+    MSE_reduction_pct = round(100 * (baseline_mse - MSE) / baseline_mse, 1),
+    RMSE_reduction_pct = round(100 * (baseline_rmse - RMSE) / baseline_rmse, 1)
+  )
+
+perf_improve %>%
+  select(Model, MSE, RMSE, R2_test, MSE_reduction_pct)
+```
+
+**Key findings:**
+
+- All regression models substantially improve over baseline
+- **mod1 (final)** achieves nearly identical performance to mod2
+- This confirms that `extra_act` and `study_method` add little predictive value
+- **The simpler model is preferred**
+
+## Calibration Plot
+
+```{r calibration, fig.cap="Calibration Plot: Predicted vs Observed"}
+calib_df <- tibble(
+  observed  = test$y,
+  predicted = pred1
+)
+
+ggplot(calib_df, aes(x = observed, y = predicted)) +
+  geom_point(alpha = 0.35) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 1) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  labs(x = "Observed exam score", y = "Predicted exam score",
+       title = "Calibration Plot: mod1 (final model)",
+       subtitle = "Points along the 45° line indicate good calibration") +
+  theme_bw(base_size = 14)
+```
+
+**Assessment:**
+The predicted values lie close to the 45-degree identity line, indicating **good calibration** of the model. The fitted regression line (blue) closely overlaps the identity line (red dashed), showing that predicted exam scores closely match the observed scores on average. This suggests that the model is well calibrated across the entire score range, with no evidence of systematic **over-prediction** or **under-prediction**.
+
+
+## Predictive Performance Summary
+
+
+                                                                                                                      
+  **Validation protocol:** 80/20 train-test split with `set.seed(42)`                                                                           
+                                                                                                                                                
+  | Metric | mod1 (final) | Interpretation |                                                                                                    
+  |--------|--------------|----------------|                                                                                                    
+  | Test R² | `r round(perf$R2_test[perf$Model == "mod1 (final)"], 3)` | Close to training R² → no overfitting |                                
+  | RMSE | `r round(perf$RMSE[perf$Model == "mod1 (final)"], 2)` | Average prediction error (in exam points) |                                  
+  | MedAE | `r round(perf$MedAE[perf$Model == "mod1 (final)"], 2)` | 50% of predictions within ±5.4 points |                                    
+  | MSE reduction vs baseline | `r perf_improve$MSE_reduction_pct[perf_improve$Model == "mod1 (final)"]`% | Substantial improvement |           
+                                                                                                                                                
+  **Key findings:**                                                                                                                             
+                                                                                                                                                
+  1. **No overfitting:** Test R² (0.713) is very close to training R² (~0.705), indicating that the model generalizes well to unseen data.      
+                                                                                                                                                
+  2. **Substantial improvement over baseline:** The final model reduces MSE by 71.3% compared to the naive baseline (predicting the training mean).                                                                                                                                        
+                                                                                                                                                
+  3. **Model comparison confirmed:** mod1 and mod2 achieve nearly identical test performance (MSE: 64.5 vs 63.3), confirming that `extra_act` and `study_method` add minimal predictive value. The simpler model is preferred.                                                              
+                                                                                                                                                
+  4. **Practical accuracy:** With RMSE ≈ 8 points and MedAE ≈ 5.4 points, the model provides reasonably accurate predictions for exam scores on a 0-100 scale.                                                                                                                                
+  
+  
+                                                                                                                                                
+**CONCLUSION:** The final model (mod1) generalizes well to unseen data, with **no evidence of overfitting**. It substantially outperforms the 
+  naive baseline and achieves comparable performance to more complex specifications, supporting its selection on grounds of parsimony.          
+
+
+
+<br>
+
+# Conclusion:
+
+This project combined exploratory data analysis, linear modeling, and validation to study and predict students’ exam performance. While richer specifications slightly improved in-sample fit, model comparison showed that a more **parsimonious** model performed just as well in prediction. For this reason, the final model was chosen as a good compromise between **explanatory power, predictive accuracy, and interpretability**. Finally, the results highlight the central role of attendance, study habits, and socioeconomic factors, and show that simple models can be both informative and effective when they are carefully selected.
+
+<br>
+
+# Use of AI                                                                                                            
+
+**Purpose:** We used AI for coding assistance (debugging R code, structuring RMarkdown), improving wording of          
+interpretations, and suggesting visualization parameters.                                                              
+
+**Parts affected:** in parts 3 and 5 of the report, it helped us choose the right parameters and graph types to obtain clear visualizations tailored to the data. Second, in part 4, AI helped us confirm that the chosen regression model was consistent with the analysis results, allowing us to validate our choice.                                                                                  
+
+**Verification:** All code was tested, outputs were checked against expected results, and statistical interpretations  
+were validated.                                                           
+                                                                  

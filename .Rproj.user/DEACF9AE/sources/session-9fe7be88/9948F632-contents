@@ -1,0 +1,3 @@
+capabilities("X11")
+capabilities("cairo")
+install.packages(c("janitor", "styler"))

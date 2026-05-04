@@ -1,0 +1,584 @@
+rm(list = ls())
+library(tidyverse)
+set.seed(42)
+
+getwd()
+data_raw <- read.csv("data/project.csv")
+dim(data_raw)
+str(data_raw)
+
+#getwd()
+
+# 2) Integrity checks
+any(duplicated(data_raw$id))
+
+any(data_raw$y < 0 | data_raw$age > 100, na.rm = TRUE)
+any(data_raw$age < 12 | data_raw$age > 25, na.rm = TRUE)
+any(data_raw$attend_pc < 0 | data_raw$attend_pc > 100, na.rm = TRUE)
+any(data_raw$study_hrs < 0 | data_raw$study_hrs > 15, na.rm = TRUE)
+any(data_raw$sleep_hrs < 0 | data_raw$sleep_hrs> 15, na.rm = TRUE)
+summary(data_raw)
+
+# 3) Variable preparation
+data_clean <- data_raw %>%
+  mutate(
+    sexe = factor(sexe,
+                  levels = c(1, 2, 3),
+                  labels = c("Female", "Male", "Other")),
+    
+    school_type = factor(school_type,
+                         levels = c(1, 2),
+                         labels = c("Public", "Private")),
+    
+    parent_educ = factor(parent_educ,
+                         levels = 1:6,
+                         labels = c("No formal",
+                                    "High school",
+                                    "Graduate",
+                                    "Post graduate 1",
+                                    "Post graduate 2",
+                                    "PhD"),
+                         ordered = TRUE),
+    
+    sleep_qual = factor(sleep_qual,
+                        levels = c(1, 2, 3),
+                        labels = c("Poor", "Average", "Good"),
+                        ordered = TRUE),
+    
+    web_access = factor(web_access,
+                        levels = c(1, 2),
+                        labels = c("No", "Yes")),
+    
+    trav_time = factor(trav_time,
+                       levels = c(1, 2, 3, 4),
+                       labels = c("<15 min", "15–30 min", "30–60 min", ">60 min"),
+                       ordered = TRUE),
+    
+    extra_act = factor(extra_act,
+                       levels = c(1, 2),
+                       labels = c("No", "Yes")),
+    
+    study_method = factor(study_method,
+                          levels = 1:6,
+                          labels = c("Online videos",
+                                     "Coaching",
+                                     "Notes",
+                                     "Textbook",
+                                     "Group study",
+                                     "Mixed"))
+  ) %>%
+  select(-agecat, -attend_pct_cat)
+
+# 4) Final check
+str(data_clean)
+dim(data_clean)
+
+
+#STEP 2 : EDA Exploratory data analysis
+
+#2.1 Descriptive statistics for quantitative variables (mean, SD, median, IQR, etc.).
+
+library(collapse)
+
+select(data_clean, y, age, study_hrs, sleep_hrs, attend_pct) |>
+  descr(Qprobs = c(0.25, 0.5, 0.75)) |>
+  as_tibble()
+
+
+#2.2 Frequency tables (counts and proportions) for categorical variables.
+
+table(data_clean$sexe)
+prop.table(table(data_clean$sexe))
+
+table(data_clean$school_type)
+prop.table(table(data_clean$school_type))
+
+table(data_clean$parent_educ)
+prop.table(table(data_clean$parent_educ))
+
+table(data_clean$sleep_qual)
+prop.table(table(data_clean$sleep_qual))
+
+table(data_clean$web_access)
+prop.table(table(data_clean$web_access))
+
+table(data_clean$trav_time)
+prop.table(table(data_clean$trav_time))
+
+table(data_clean$extra_act)
+prop.table(table(data_clean$extra_act))
+
+table(data_clean$study_method)
+prop.table(table(data_clean$study_method))
+
+
+library(ggplot2)
+
+
+#2.3 Visual exploration (EDA must inform modeling decisions):
+
+library(ggpubr)
+
+ggplot(data_clean, aes(x = y)) +
+  geom_histogram(bins = 10, color = "black", fill = "dodgerblue") +
+  scale_y_continuous(expand = expansion(c(0, 0.05))) +
+  labs(x = "Exam score (y)", y = "Count") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+ggplot(data_clean, aes(y = y)) +
+  geom_boxplot(fill = "dodgerblue", color = "black") +
+  labs(y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+
+#comment briefly on skewness and potential outliers : The exam score distribution is quite symmetric, even if there is a slight right skew. The histogram and boxplot show a few extreme observations, but no clear outliers. Therefore, a transformation of the response variable does not seem required at this stage.
+
+
+# y versus each predictor : 
+# y versus age
+ggplot(data_clean, aes(x = age, y = y)) +
+  geom_point(size = 2, shape = 21, fill = "lightpink", color = "black") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(x = "Age", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+
+# y versus study_hrs
+ggplot(data_clean, aes(x = study_hrs, y = y)) +
+  geom_point(size = 2, shape = 21, fill = "green", color = "black") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(x = "Study hours", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+# y versus sleep_hrs
+ggplot(data_clean, aes(x = sleep_hrs, y = y)) +
+  geom_point(size = 2, shape = 21, fill = "brown", color = "black") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(x = "Sleep hours", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#y versus attend_pct
+ggplot(data_clean, aes(x = attend_pct, y = y)) +
+  geom_point(size = 2, shape = 21, fill = "yellow", color = "black") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(x = "Attendance rate", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#test on qualitative predictor spearman et pearson
+
+# y vs each categoriels predictors : 
+
+#y vs sexe
+ggplot(data_clean, aes(x = sexe, y = y)) +
+  geom_boxplot(fill = "orange", color = "black") +
+  labs(x = "Sex", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#y vs school_type
+ggplot(data_clean, aes(x = school_type, y = y)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(x = "School type", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#y vs parent_educ
+ggplot(data_clean, aes(x = parent_educ, y = y)) +
+  geom_boxplot(fill = "red", color = "black") +
+  labs(x = "Parental education", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#y vs sleep_qual
+ggplot(data_clean, aes(x = sleep_qual, y = y)) +
+  geom_boxplot(fill = "dodgerblue", color = "black") +
+  labs(x = "Sleep quality", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#y vs trav_time
+ggplot(data_clean, aes(x = trav_time, y = y)) +
+  geom_boxplot(fill = "lightpink", color = "black") +
+  labs(x = "Travel time", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#y vs extra_act
+ggplot(data_clean, aes(x = extra_act, y = y)) +
+  geom_boxplot(fill = "lightyellow", color = "black") +
+  labs(x = "Extra activities", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+
+#y vs study_method
+ggplot(data_clean, aes(x = study_method, y = y)) +
+  geom_boxplot(fill = "lightgreen", color = "black") +
+  labs(x = "Study method", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#Sumarize : We briefly explored the associations between predictors to anticipate possible collinearity and confounding effects. Among numeric variables, study hours and attendance rate appear moderately related, while other quantitative predictors show weaker associations. Some categorical variables related to students’ background, such as parental education, school type, and internet access, also seem to be associated. Mixed associations suggest that study behavior varies across socio-demographic groups. Overall, no strong dependence between predictors is observed, although potential collinearity between study hours and attendance should be considered in the modeling stage.
+
+#2.4) For ordinal predictors, include at least one visualization that helps assess monotone trends in y across ordered levels.
+# In our data set, the ordinal predictors are : parent_educ, sleep_qual, trav_time sol let's do boxplot
+#y vs parent_educ (ordinal)
+ggplot(data_clean, aes(x = parent_educ, y = y)) +
+  geom_boxplot(fill = "dodgerblue", color = "black") +
+  labs(x = "Parental education (ordered)", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#y vs sleep_qual (ordinal)
+ggplot(data_clean, aes(x = sleep_qual, y = y)) +
+  geom_boxplot(fill = "orange", color = "black") +
+  labs(x = "Sleep quality (ordered)", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+#y vs trav_time (ordinal)
+ggplot(data_clean, aes(x = trav_time, y = y)) +
+  geom_boxplot(fill = "lightgreen", color = "black") +
+  labs(x = "Travel time (ordered)", y = "Exam score (y)") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+# For ordinal predictors, boxplots suggest monotone trends in y across ordered levels.
+# Higher parental education and better sleep quality are associated with higher median scores,
+# while longer travel time tends to be linked with lower exam performance.
+
+
+#2.5 :  ConcludeEDAwith3–6keyfindingsthatmotivate:(i)candidatepredictors,(ii)anytransformations/nonlinear terms, and (iii) a small number of interaction hypotheses to test.
+
+# EDA suggests that study hours and attendance rate are strong candidate predictors of exam score.
+# Ordinal variables (parental education, sleep quality, travel time) show monotone patterns and
+# should be treated as ordered predictors. No transformation of y seems necessary, and linear
+# effects appear reasonable. Potential interactions to consider include study_hrs × attend_pct
+# and parental_educ × study behavior.
+
+
+
+
+# 3.1 Simple linear regressions — quantitative predictors
+
+# Quantitative predictors
+m_age    <- lm(y ~ age, data = data_clean)
+m_study  <- lm(y ~ study_hrs, data = data_clean)
+m_sleep  <- lm(y ~ sleep_hrs, data = data_clean)
+m_attend <- lm(y ~ attend_pct, data = data_clean)
+
+# Categorical predictors
+m_sexe      <- lm(y ~ sexe, data = data_clean)
+m_school    <- lm(y ~ school_type, data = data_clean)
+m_parent    <- lm(y ~ parent_educ, data = data_clean)
+m_sleepqual <- lm(y ~ sleep_qual, data = data_clean)
+m_trav      <- lm(y ~ trav_time, data = data_clean)
+m_extra     <- lm(y ~ extra_act, data = data_clean)
+m_method    <- lm(y ~ study_method, data = data_clean)
+
+# Display only the most informative ones
+summary(m_attend)
+summary(m_study)
+summary(m_parent)
+summary(m_sleepqual)
+summary(m_trav)
+
+
+## Simple regressions confirm that attendance rate, study hours,
+# parental education, sleep quality and travel time are strong predictors.
+# These results motivate the multivariate model.
+
+#À METTRE DANS LE RAPPORT
+# We first estimate simple linear regressions (one predictor at a time) to describe baseline associations. Attendance rate shows a very strong positive association with exam score (R² ≈ 0.55), making it the strongest single predictor. Study hours is also positively related to performance. For categorical variables, parental education, sleep quality, and travel time are clearly associated with exam score (higher parental education and better sleep quality correspond to higher scores, while longer travel time corresponds to lower scores). These results confirm the EDA patterns and motivate the predictors included in the multivariate model.
+
+#3.2: multiple linear regression models with a justified set of predictors 
+
+mod0 <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs, data = data_clean)
+
+# Model 1: add key categorical/ordinal predictors supported by EDA
+mod1 <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs +
+             parent_educ + sleep_qual + trav_time +
+             school_type + web_access,
+           data = data_clean)
+
+# Model 2: add a small number of motivated extra terms (optional)
+mod2 <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs +
+             parent_educ + sleep_qual + trav_time +
+             school_type + web_access +
+             extra_act + study_method,
+           data = data_clean)
+
+# Model 3: test ONE interaction hypothesis 
+# Hypothesis: effect of study_hrs depends on attend_pct (or vice-versa)
+mod3 <- lm(y ~ attend_pct * study_hrs + age + sleep_hrs +
+             parent_educ + sleep_qual + trav_time +
+             school_type + web_access,
+           data = data_clean)
+# Test whether adding the interaction improves the model (nested within mod1)
+anova(mod1, mod3) |> as.data.frame()
+
+# Comment:
+# The interaction term attend_pct:study_hrs is not statistically significant (p ≈ 0.11).
+# In line with parsimony, we do not retain interaction terms, and we keep mod2 as final
+
+# We considered possible transformations or re-expressions of the response and predictors based on the exploratory analysis and model diagnostics. However, simple regressions and residual plots do not reveal strong nonlinearity, skewness, or heteroskedasticity. Therefore, no transformation is justified, and we retain the original scale of the variables to preserve interpretability.
+#Hypothesis:
+# The effect of study hours on exam score may depend on attendance rate.
+# Students who attend more classes may benefit more from additional study hours.
+
+
+
+# 3.5 Model comparison and final choice
+
+
+library(performance)
+library(dplyr)
+
+# Short model-selection table (Adj R2, AIC, BIC)
+tab_models <- bind_rows(
+  model_performance(mod0) |> mutate(Model = "mod0"),
+  model_performance(mod1) |> mutate(Model = "mod1"),
+  model_performance(mod2) |> mutate(Model = "mod2"),
+  model_performance(mod3) |> mutate(Model = "mod3")
+) |>
+  select(Model, R2_adjusted, AIC, BIC) |>
+  arrange(AIC)
+
+tab_models
+
+# Nested F-tests (inferential criterion)
+ftests <- bind_rows(
+  anova(mod0, mod1) |> as.data.frame() |> mutate(Comparison = "mod0 vs mod1"),
+  anova(mod1, mod2) |> as.data.frame() |> mutate(Comparison = "mod1 vs mod2"),
+  anova(mod1, mod3) |> as.data.frame() |> mutate(Comparison = "mod1 vs mod3")
+) |>
+  filter(!is.na(`Pr(>F)`)) |>
+  select(Comparison, Df, F, `Pr(>F)`)
+
+ftests
+
+
+#Table X summarizes model comparisons using adjusted R² and information criteria. Moving from the baseline model (mod0) to mod1 leads to a substantial improvement in fit (Adj. R² increases from 0.675 to 0.705 and AIC decreases from 35696.0 to 35223.2). Adding further predictors in mod2 yields the best overall performance, with the highest adjusted R² (0.710) and the lowest AIC (35153.4) and BIC (35309.9).
+#Nested F-tests confirm these results: mod1 significantly improves over mod0 (p = 1.88 × 10⁻⁹⁸), and mod2 significantly improves over mod1 (p = 1.83 × 10⁻¹⁵). In contrast, the interaction model mod3 does not provide a significant improvement over mod1 (p = 0.107).
+#Using both an inferential criterion (nested F-tests) and selection criteria (AIC/BIC and adjusted R²), we therefore select Model 2 as the final specification.
+# Final model = mod2 
+
+
+
+#STEP4 : 
+#4.1 : Provide and comment briefly on diagnostics for your final model (include at least: residuals vs fitted, residuals vs predictors, residuals vs omitted variables, Q–Q plot, and influence/leverage diagnostics such as Cook’s distance).
+
+#residua vs fitted
+install.packages("ggfortify")
+library(ggfortify)
+
+autoplot(mod2, which = 1) +
+  theme_bw(base_size = 14)
+## Residuals vs fitted values do not show a clear pattern and the variance looks stable,
+# suggesting that the linear specification is reasonable.
+
+#residuals vs predictors
+data_clean |>
+  ggplot(aes(x = attend_pct, y = resid(mod2))) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", se = FALSE, color = "red") +
+  theme_bw(base_size = 14) +
+  labs(x = "Attendance rate", y = "Residuals")
+
+##Residuals plotted against attendance rate do not reveal clear non-linear patterns, supporting the linearity assumption.
+
+#Q-Q Plot
+autoplot(mod2, which = 2) +
+  theme_bw(base_size = 14)
+##The Q–Q plot shows that residuals are close to the theoretical normal line, with small deviations in the tails.
+
+#Cook’s distance
+autoplot(mod2, which = 4) +
+  theme_bw(base_size = 14)
+##Although some observations have higher Cook’s distance values, none exceed the usual threshold of 1, suggesting that no observation has a strong influence on the model.
+
+#residuals vs ommitted variables
+library(ggpubr)
+ggplot(data_clean, aes(x = extra_act, y = resid(mod2))) +
+  geom_boxplot(fill = "dodgerblue", color = "black") +
+  labs(x = "Extra activities", y = "Residuals") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+
+ggplot(data_clean, aes(x = study_method, y = resid(mod2))) +
+  geom_boxplot(fill = "dodgerblue", color = "black") +
+  labs(x = "Study method", y = "Residuals") +
+  theme_bw(base_size = 14) +
+  labs_pubr()
+## Residuals vs omitted variables do not show clear patterns,
+# suggesting that no major predictor has been omitted.
+
+##Overall, diagnostic plots do not indicate major violations of OLS assumptions. Minor deviations from normality and a few influential observations are observed, but they do not threaten the stability of the results. The main findings are therefore considered robust.
+
+
+#4.2-3
+### Diagnostics do not reveal major issues affecting inference or prediction.
+# No observations were removed, as no data errors or highly influential points were detected.
+# Overall, the main results appear stable under the different sensitivity checks.
+
+#STEP 5:
+
+#final model equation
+mod2 <- lm(y ~ attend_pct + study_hrs + age + sleep_hrs +
+             parent_educ + sleep_qual + trav_time +
+             school_type + web_access +
+             extra_act + study_method,
+           data = data_clean)
+#pas compris comme en TP
+
+#estimates, standard errors, and 95% confidence intervals
+library(broom)
+tidy(mod2, conf.int=TRUE, conf.level=0.95)
+
+#interprétation ?
+
+#scénario ?
+
+#Discuter de la signification pratique par rapport à la signification statistique (ne pas se fier uniquement aux valeurs p)
+
+#Résumer brièvement l’ajustement global du modèle (par exemple, R², R² ajusté, écart-type résiduel, etc.).
+
+
+# 6) Predictive performance (train / test)
+
+#6.1 Train / test split (reproducible) 
+set.seed(42)
+
+n <- nrow(data_clean)
+idx_train <- sample(seq_len(n), size = 0.8 * n)
+
+train <- data_clean[idx_train, ]
+test  <- data_clean[-idx_train, ]
+
+dim(train)
+dim(test)
+
+#6.2 Refit candidate models on TRAIN only 
+mod1_tr <- lm(
+  y ~ attend_pct + study_hrs + age + sleep_hrs +
+    parent_educ + sleep_qual + trav_time +
+    school_type + web_access,
+  data = train
+)
+
+mod2_tr <- lm(
+  y ~ attend_pct + study_hrs + age + sleep_hrs +
+    parent_educ + sleep_qual + trav_time +
+    school_type + web_access +
+    extra_act + study_method,
+  data = train
+)
+
+mod3_tr <- lm(
+  y ~ attend_pct * study_hrs + age + sleep_hrs +
+    parent_educ + sleep_qual + trav_time +
+    school_type + web_access,
+  data = train
+)
+
+# 6.3 Predict on TEST (unseen "new students")
+pred1 <- predict(mod1_tr, newdata = test)
+pred2 <- predict(mod2_tr, newdata = test)  # final model
+pred3 <- predict(mod3_tr, newdata = test)
+
+# 6.4 Baseline model: predict training mean of y
+y_mean <- mean(train$y)
+pred_base <- rep(y_mean, nrow(test))
+
+#  6.5 Metrics (MSE required + RMSE, R2_test, MedAE)
+mse <- function(y, yhat) mean((y - yhat)^2)
+rmse <- function(y, yhat) sqrt(mean((y - yhat)^2))
+
+# out-of-sample R^2 computed on test set
+r2_oos <- function(y, yhat) {
+  1 - sum((y - yhat)^2) / sum((y - mean(y))^2)
+}
+
+medae <- function(y, yhat) median(abs(y - yhat))
+
+#6.6 Performance table (same protocol for all models)
+perf <- tibble(
+  Model = c("Baseline", "mod1", "mod2 (final)", "mod3"),
+  
+  MSE = c(
+    mse(test$y, pred_base),
+    mse(test$y, pred1),
+    mse(test$y, pred2),
+    mse(test$y, pred3)
+  ),
+  
+  RMSE = c(
+    rmse(test$y, pred_base),
+    rmse(test$y, pred1),
+    rmse(test$y, pred2),
+    rmse(test$y, pred3)
+  ),
+  
+  R2_test = c(
+    r2_oos(test$y, pred_base),
+    r2_oos(test$y, pred1),
+    r2_oos(test$y, pred2),
+    r2_oos(test$y, pred3)
+  ),
+  
+  MedAE = c(
+    medae(test$y, pred_base),
+    medae(test$y, pred1),
+    medae(test$y, pred2),
+    medae(test$y, pred3)
+  )
+)
+
+perf
+
+#  6.7 Improvement over baseline
+baseline_mse  <- perf$MSE[perf$Model == "Baseline"]
+baseline_rmse <- perf$RMSE[perf$Model == "Baseline"]
+
+perf_improve <- perf %>%
+  mutate(
+    MSE_gain = baseline_mse - MSE,                       # >0 means better than baseline
+    MSE_gain_pct = 100 * (baseline_mse - MSE) / baseline_mse,
+    RMSE_gain = baseline_rmse - RMSE,                    # >0 means better than baseline
+    RMSE_gain_pct = 100 * (baseline_rmse - RMSE) / baseline_rmse
+  )
+
+perf_improve
+
+perf_improve %>%
+  select(Model, MSE, RMSE, R2_test, MedAE, RMSE_gain_pct)
+
+#6.8 Calibration check (predicted vs observed) final model 
+calib_df <- tibble(
+  observed  = test$y,
+  predicted = pred2
+)
+
+ggplot(calib_df, aes(x = observed, y = predicted)) +
+  geom_point(alpha = 0.35) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    title = "Calibration plot – Final model (mod2)",
+    subtitle = paste0("Test set (n = ", nrow(test), ")"),
+    x = "Observed exam score",
+    y = "Predicted exam score"
+  ) +
+  theme_bw()
+
+head(tibble(
+  observed = test$y,
+  pred_mod2 = pred2
+))
+

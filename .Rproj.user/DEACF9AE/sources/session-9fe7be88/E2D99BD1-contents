@@ -1,0 +1,32 @@
+commentaire partie 6:
+  
+We use an 80/20 train–test split with set.seed(42) for reproducibility.
+Le modèle apprend uniquement sur 80 % des étudiants.
+
+#Validation protocol
+We evaluate the out-of-sample predictive performance of the candidate models using a train–test split. The dataset is randomly divided into 80% training data (n = 4000) and 20% test data (n = 1000), using set.seed(42) to ensure reproducibility. All models are estimated on the training set only, and predictions are generated on the test set, which is treated as unseen data.
+Performance metrics
+Predictive performance is assessed on the test set using Mean Squared Error (MSE), reported through its square root (RMSE), out-of-sample R2 and Median Absolute Error (MedAE). We also include a baseline model that predicts the training mean of y for all observations.
+
+The baseline model performs very poorly, with an RMSE of about 15 points, indicating that simply predicting the mean exam score provides little predictive value. The negative out-of-sample R2
+reflects the fact that the baseline performs slightly worse than predicting the test-set mean, which is expected due to sampling variability between training and test sets.
+All regression models substantially improve upon the baseline. Among them, the final model (mod2) achieves the lowest RMSE and the highest out-of-sample R2
+, indicating that it generalizes best to unseen data. The interaction model (mod3) does not improve predictive performance, confirming earlier inferential results and supporting the more parsimonious specification.
+Overall, mod2 reduces the average prediction error by nearly 50% compared to the baseline, demonstrating strong predictive ability.
+
+Calibration
+Figure X presents the calibration plot for the final model. Predicted and observed exam scores are closely aligned along the 45-degree line, indicating good calibration. The model slightly underestimates very high scores, but no major systematic bias is observed.
+Conclusion on predictive performance
+The final model selected on statistical grounds also performs best in out-of-sample prediction. This consistency indicates that the model captures stable relationships in the data and generalizes well beyond the training sample.
+
+
+Commentaire sur le R 
+2
+test : Compare ton R 
+2
+de test avec celui d'entraînement. S'ils sont proches (ex: 0.70 vs 0.71), tu peux affirmer que ton modèle est stable et ne fait pas de sur-apprentissage (overfitting).
++1
+
+Justification du choix final : Même si mod2 et mod3 ont des performances très proches, tu as raison de préférer mod2. Le sujet précise qu'en cas de performances similaires, la parsimonie (le modèle le plus simple) est préférée.
+
+Interprétation du MedAE : Explique ce que signifie cette valeur. Par exemple : "En moyenne, l'erreur typique sur une prédiction est de X points, et pour 50% des étudiants, l'erreur est inférieure à [valeur MedAE] points."

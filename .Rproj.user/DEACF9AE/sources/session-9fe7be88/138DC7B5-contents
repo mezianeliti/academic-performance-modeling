@@ -1,0 +1,33 @@
+---
+title: "Determinants of Students’ Exam Performance"
+author: "Ambrine, Yasmine Talata and Liticia Meziane"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+Students’ academic performance is an important issue in education, as it influences future educational and labor market outcomes. 
+
+This project analyzes a dataset on students’ exam scores combined with demographic characteristics, study behavior, and school-related factors. The objective is to identify the main determinants of exam performance using linear regression models.
+
+The analysis is conducted in several steps:
+
+- Data preparation and cleaning to ensure consistency and proper coding of variables.
+- Exploratory data analysis (EDA) to describe the data and guide model specification.
+- Estimation and comparison of multiple linear regression models using statistical criteria.
+- Diagnostic checks to assess model assumptions and robustness.
+- Evaluation of predictive performance using a validation approach.
+
+
+# Data and Methods
+## Dataset description
