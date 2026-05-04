@@ -1,60 +1,74 @@
-# Portfolio Optimization
+# Academic Performance Modeling
 
-Markowitz mean-variance portfolio optimization applied to 4 major indices, with efficient frontier and Capital Market Line visualization.
+Analysis and modeling of academic performance to identify the key factors influencing student exam scores using linear regression in R.
 
 ---
 
 ## Objective
 
-Build and analyze the **tangent portfolio** from a universe of 4 market indices, maximize the Sharpe ratio, and visualize the efficient frontier versus the Capital Market Line.
+Identify which student characteristics, study habits, family background, and school environment variables are most strongly associated with exam performance, and build a parsimonious, interpretable linear regression model.
 
 ---
 
-## Assets
+## Dataset
 
-| Ticker | Index |
-|--------|-------|
-| `^RUT` | Russell 2000 |
-| `^IXIC` | NASDAQ Composite |
-| `^GSPC` | S&P 500 |
-| `XWD.TO` | iShares MSCI World ETF |
+- **File:** `data/project.csv` — 5 000 students × 16 variables
+- **Response variable:** `y` — exam score (0–100)
 
-**Period:** 2023-01-01 → 2024-01-01 · **Risk-free rate:** 1%
+Key predictors: `attend_pct`, `study_hrs`, `sleep_hrs`, `age`, `parent_educ`, `sleep_qual`, `trav_time`, `school_type`, `web_access`, `sexe`, `extra_act`, `study_method`
 
 ---
 
-## Methodology
+## Project Structure
 
-1. **Data extraction** — daily closing prices via `yfinance`
-2. **Returns** — annualized expected returns and covariance matrix (×252)
-3. **Tangent portfolio** — closed-form allocation maximizing Sharpe ratio
-4. **Efficient frontier** — full mean-variance frontier plotted against the CML
-
----
-
-## Key Results
-
-| Asset / Portfolio | Ann. Return | Ann. Std Dev | Sharpe Ratio |
-|-------------------|-------------|--------------|--------------|
-| ^RUT | 16.8% | 20.1% | 0.79 |
-| ^IXIC | 38.8% | 17.4% | 2.17 |
-| ^GSPC | 23.2% | 13.1% | 1.70 |
-| XWD.TO | 18.8% | 9.9% | 1.80 |
-| **Tangent Portfolio** | **66.6%** | **26.1%** | **2.51** |
-
-**Tangent portfolio weights:** `^RUT` −40%, `^IXIC` +286%, `^GSPC` −230%, `XWD.TO` +85%
-
----
-
-## Stack
-
-- Python · `yfinance` · `numpy` · `pandas` · `matplotlib`
-
----
-
-## Run
-
-```bash
-pip install yfinance pandas numpy matplotlib
-jupyter notebook optimisation_portfolio.ipynb
 ```
+.
+├── data/project.csv          # Raw dataset
+├── R/run_analysis.R          # Full analysis script
+├── Projet Rapport.Rmd        # R Markdown report
+├── Projet-Rapport.html       # Rendered HTML report
+└── README.md
+```
+
+---
+
+## Analysis Pipeline
+
+1. **Data preparation** — integrity checks, factor recoding, removal of redundant variables
+2. **EDA** — descriptive stats, LOESS smooths, boxplots, correlation matrix, chi-square tests
+3. **Model building** — simple regressions per predictor, then 4 multiple regression models compared
+4. **Model selection** — Adjusted R², AIC, BIC, nested F-tests, 80/20 train-test split
+5. **Diagnostics** — residual plots, QQ-plot, Breusch-Pagan test, Shapiro-Wilk test
+
+**Selected model: `mod1`**
+```
+y ~ attend_pct + study_hrs + age + sleep_hrs +
+    parent_educ + sleep_qual + trav_time + school_type + web_access
+```
+
+---
+
+## Results
+
+| Metric | Value |
+|--------|-------|
+| R² (in-sample) | ~0.71 |
+| Test R² (out-of-sample) | 0.713 |
+| RMSE (test set) | ~8 pts |
+| Median Absolute Error | ~5.4 pts |
+
+**Key findings:** attendance rate is the strongest driver (r ≈ 0.74); private school, higher parental education, and good sleep quality are positively associated with scores; long commute (> 60 min) reduces scores by ~3.6 pts; gender showed near-zero explanatory power.
+
+---
+
+## How to Run
+
+```r
+install.packages(c("tidyverse", "collapse", "ggpubr", "corrplot",
+                   "performance", "ggfortify", "lmtest", "broom", "car"))
+source("R/run_analysis.R")
+# or render the full report:
+rmarkdown::render("Projet Rapport.Rmd")
+```
+
+All results are reproducible with `set.seed(42)`.
